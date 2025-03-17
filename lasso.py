@@ -33,11 +33,7 @@ class LassoPathMethod():
         """
         Initializes the LassoPath method with the specified parameters.
         """
-        super().__init__(
-            _path_based_method=True,
-            _accepts_bounds=True,
-            _accepts_selection=True,
-        )
+
         self.beta_lower_bound = beta_lower_bound
         self.beta_upper_bound = beta_upper_bound
         self.lambda_n = lambda_n

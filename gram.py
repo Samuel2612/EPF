@@ -48,7 +48,7 @@ def init_inverted_gram(X, w):
     else:
         raise ValueError("Matrix is not invertible.")
 
-def update_gram(gram, X, forget=0, w=1):
+def update_gram(gram, X, w=1):
     """Update the Gramian Matrix with new observations.
 
     """
@@ -61,7 +61,7 @@ def update_gram(gram, X, forget=0, w=1):
         new_gram = gram + (X * weights).T @ (X * weights)
     return new_gram
 
-def update_y_gram(gram, X, y, forget=0, w=1):
+def update_y_gram(gram, X, y, w=1):
     """Update the y-Gramian Matrix with new observations.
 
     """

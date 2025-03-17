@@ -196,7 +196,6 @@ class LimitOrderBookProcessor:
                 }, index=full_index)
                 
             else:
-                # === We do have trades for this hour ===
                 df_sub.set_index('Execution time', inplace=True)
                 df_sub.sort_index(inplace=True)
                 

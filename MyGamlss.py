@@ -17,14 +17,14 @@ from scaler import MyScaler
 
 
 
-class MyGamlss:
+class Gamlss_py:
     """The online/incremental GAMLSS class."""
 
-    def __init__(self, distribution, equation, method="lasso", scale_inputs=True,
+    def __init__(self, distribution, method="lasso", scale_inputs=True,
                  fit_intercept=True, regularize_intercept=False, ic="bic", max_it_outer=30,
                  max_it_inner=30, abs_tol_outer=1e-3, abs_tol_inner=1e-3, rel_tol_outer=1e-5,
                  rel_tol_inner=1e-5, rss_tol_inner=1.5):
-        """The `OnlineGamlss()` provides the fit, update and predict methods for linear parametric GAMLSS models.
+        """The `Gamlss_py` provides the fit, update and predict methods for linear parametric GAMLSS models.
 
         For a response variable $Y$ which is distributed according to the distribution $\mathcal{F}(\theta)$
         with the distribution parameters $\theta$, we model:
@@ -34,16 +34,15 @@ class MyGamlss:
         
         """
         self.distribution = distribution
-        self.equation = self._process_equation(equation)
         self._process_attribute(fit_intercept, True, "fit_intercept")
         self._process_attribute(regularize_intercept, False, "regularize_intercept")
         self._process_attribute(ic, "aic", "ic")
 
         # Get the estimation method
-        self._process_attribute(method, "ols", "method")
+        self._process_attribute(method, "method")
         self._method = {p: get_estimation_method(m) for p, m in self.method.items()}
 
-        self.scaler = OnlineScaler(to_scale=scale_inputs)
+        self.scaler = MyScaler(to_scale=scale_inputs)
         self.do_scale = scale_inputs
 
         # These are global for all distribution parameters
@@ -119,54 +118,29 @@ class MyGamlss:
 
         return J
 
-    def make_model_array(self, X, param):
-        eq = self.equation[param]
-        n = X.shape[0]
 
-        if isinstance(eq, str) and (eq == "intercept"):
-            out = self._make_intercept(n_observations=n)
-        else:
-            if isinstance(eq, str) and (eq == "all"):
-                if isinstance(X, np.ndarray):
-                    out = X
-            elif isinstance(eq, np.ndarray) or isinstance(eq, list):
-                if isinstance(X, np.ndarray):
-                    out = X[:, eq]
-
-            if self.fit_intercept[param]:
-                out = np.hstack((self._make_intercept(n), out))
-
-        return out
 
     def fit_beta_and_select_model(self, X, y, w, iteration_outer, iteration_inner, param):
         f = init_weight_vector(self.n_observations)
 
-        if not self._method[param]._path_based_method:
-            beta_path = None
-            beta = self._method[param].fit_beta(
-                x_gram=self.x_gram[param],
-                y_gram=self.y_gram[param],
-                is_regularized=self.is_regularized[param],
-            )
-            residuals = y - X @ beta.T
-            rss = np.sum(residuals**2 * w * f) / np.mean(w * f)
-        else:
-            beta_path = self._method[param].fit_beta_path(
-                x_gram=self.x_gram[param],
-                y_gram=self.y_gram[param],
-                is_regularized=self.is_regularized[param],
-            )
-            residuals = y[:, None] - X @ beta_path.T
-            rss = np.sum(residuals**2 * w[:, None] * f[:, None], axis=0)
-            rss = rss / np.mean(w * f)
-            model_params_n = np.sum(~np.isclose(beta_path, 0), axis=1)
-            best_ic = select_best_model_by_information_criterion(
-                self.n_training[param], model_params_n, rss, self.ic[param]
-            )
-            beta = beta_path[best_ic, :]
+     
+   
+        beta_path = self._method[param].fit_beta_path(
+            x_gram=self.x_gram[param],
+            y_gram=self.y_gram[param],
+            is_regularized=self.is_regularized[param],
+        )
+        residuals = y[:, None] - X @ beta_path.T
+        rss = np.sum(residuals**2 * w[:, None] * f[:, None], axis=0)
+        rss = rss / np.mean(w * f)
+        model_params_n = np.sum(~np.isclose(beta_path, 0), axis=1)
+        best_ic = select_best_model_by_information_criterion(
+            self.n_training[param], model_params_n, rss, self.ic[param]
+        )
+        beta = beta_path[best_ic, :]
 
-            self.rss_iterations_inner[param][iteration_outer][iteration_inner] = rss
-            self.ic_iterations_inner[param][iteration_outer][iteration_inner] = best_ic
+        self.rss_iterations_inner[param][iteration_outer][iteration_inner] = rss
+        self.ic_iterations_inner[param][iteration_outer][iteration_inner] = best_ic
 
         self.residuals[param] = residuals
         self.weights[param] = w
@@ -174,44 +148,26 @@ class MyGamlss:
         return beta, beta_path, rss
 
     def update_beta_and_select_model(self, X, y, w, iteration_outer, iteration_inner, param):
-        denom = online_mean_update(
-            self.mean_of_weights[param], w, self.forget[param], self.n_observations
+       
+        beta_path = self._method[param].update_beta_path(
+            x_gram=self.x_gram_inner[param],
+            y_gram=self.y_gram_inner[param],
+            beta_path=self.beta_path[param],
+            is_regularized=self.is_regularized[param],
         )
-
-        if not self._method[param]._path_based_method:
-            beta_path = None
-            beta = self._method[param].update_beta(
-                x_gram=self.x_gram_inner[param],
-                y_gram=self.y_gram_inner[param],
-                beta=self.beta[param],
-                is_regularized=self.is_regularized[param],
-            )
-            residuals = y - X @ beta.T
-            rss = (
-                (residuals**2).flatten() * w
-                + (1 - self.forget[param])
-                * (self.rss_old[param] * self.mean_of_weights[param])
-            ) / denom
-        else:
-            beta_path = self._method[param].update_beta_path(
-                x_gram=self.x_gram_inner[param],
-                y_gram=self.y_gram_inner[param],
-                beta_path=self.beta_path[param],
-                is_regularized=self.is_regularized[param],
-            )
-            residuals = y - X @ beta_path.T
-            rss = (
-                (residuals**2).flatten() * w
-                + (1 - self.forget[param])
-                * (self.rss_old[param] * self.mean_of_weights[param])
-            ) / denom
-            model_params_n = np.sum(np.isclose(beta_path, 0), axis=1)
-            best_ic = select_best_model_by_information_criterion(
-                self.n_training[param], model_params_n, rss, self.ic[param]
-            )
-            self.rss_iterations_inner[param][iteration_outer][iteration_inner] = rss
-            self.ic_iterations_inner[param][iteration_outer][iteration_inner] = best_ic
-            beta = beta_path[best_ic, :]
+        residuals = y - X @ beta_path.T
+        rss = (
+            (residuals**2).flatten() * w
+            + (1 - self.forget[param])
+            * (self.rss_old[param] * self.mean_of_weights[param])
+        )
+        model_params_n = np.sum(np.isclose(beta_path, 0), axis=1)
+        best_ic = select_best_model_by_information_criterion(
+            self.n_training[param], model_params_n, rss, self.ic[param]
+        )
+        self.rss_iterations_inner[param][iteration_outer][iteration_inner] = rss
+        self.ic_iterations_inner[param][iteration_outer][iteration_inner] = best_ic
+        beta = beta_path[best_ic, :]
 
         return beta, beta_path, rss
 
@@ -233,7 +189,7 @@ class MyGamlss:
         """
         self.n_observations = y.shape[0]
         self.n_training = {
-            p: calculate_effective_training_length(self.forget[p], self.n_observations)
+            p: 100
             for p in range(self.distribution.n_params)
         }
 
@@ -298,7 +254,7 @@ class MyGamlss:
 
         self.n_observations += y.shape[0]
         self.n_training = {
-            p: calculate_effective_training_length(self.forget[p], self.n_observations)
+            p: 100
             for p in range(self.distribution.n_params)
         }
 
@@ -434,13 +390,10 @@ class MyGamlss:
             )
 
             if iteration_inner > 1 or iteration_outer > 1:
-                if self.method[param] == "ols":
-                    if rss_new > (self.rss_tol_inner * self.rss[param]):
-                        break
-                else:
-                    ic_idx = self.ic_iterations_inner[param][iteration_outer][iteration_inner]
-                    if rss_new[ic_idx] > (self.rss_tol_inner * self.rss[param][ic_idx]):
-                        break
+       
+                ic_idx = self.ic_iterations_inner[param][iteration_outer][iteration_inner]
+                if rss_new[ic_idx] > (self.rss_tol_inner * self.rss[param][ic_idx]):
+                    break
 
             self.beta[param] = beta_new
             self.beta_path[param] = beta_path_new
@@ -499,13 +452,10 @@ class MyGamlss:
                 X[param], y=wv, w=wt, iteration_inner=iteration_inner,
                 iteration_outer=iteration_outer, param=param
             )
-            if self.method[param] == "ols":
-                if rss_new > (self.rss_tol_inner * self.rss[param]):
-                    break
-            else:
-                ic_idx = self.ic_iterations_inner[param][iteration_outer][iteration_inner]
-                if rss_new[ic_idx] > (self.rss_tol_inner * self.rss[param][ic_idx]):
-                    break
+
+            ic_idx = self.ic_iterations_inner[param][iteration_outer][iteration_inner]
+            if rss_new[ic_idx] > (self.rss_tol_inner * self.rss[param][ic_idx]):
+                break
 
             self.beta[param] = beta_new
             self.beta_path[param] = beta_path_new
@@ -528,16 +478,13 @@ class MyGamlss:
 
         return dv
 
-    def predict(self, X, what="response", return_contributions=False):
+    def predict(self, X,, beta_values = True):
         """Predict the distribution parameters given input data.
 
         Args:
             X: Design matrix.
-            what: Predict the response or the link. Defaults to "response".
-            return_contributions: Whether to return contributions of individual covariates. Defaults to False.
+            beta_values: Whether to return contributions of individual covariates.
 
-        Raises:
-            ValueError: If 'what' is not 'link' or 'response'.
 
         Returns:
             Predicted values for the distribution.
@@ -549,22 +496,25 @@ class MyGamlss:
         }
         prediction = [x @ b.T for x, b in zip(X_dict.values(), self.beta.values())]
 
-        if return_contributions:
+        if beta_values:
             contribution = [x * b.T for x, b in zip(X_dict.values(), self.beta.values())]
 
+
+        prediction = [
+            self.distribution.link_inverse(p, param=i)
+            for i, p in enumerate(prediction)
+        ]
+        
         if what == "response":
             prediction = [
                 self.distribution.link_inverse(p, param=i)
                 for i, p in enumerate(prediction)
             ]
-        elif what == "link":
-            pass
-        else:
-            raise ValueError("Should be 'response' or 'link'.")
+
 
         prediction = np.stack(prediction, axis=1)
 
-        if return_contributions:
+        if beta_values:
             return prediction, contribution
         else:
             return prediction

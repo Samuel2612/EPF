@@ -48,7 +48,7 @@ def build_johnson_su_model(n_features, hidden_units=16, l1_strength=0.0, learnin
     reg = regularizers.L1(l1_strength) if (l1_strength > 0) else None
 
     inputs = tfkl.Input(shape=(n_features,), name="Features")
-    x = tfkl.Dense(hidden_units, activation='relu', kernel_regularizer=reg)(inputs)
+    x = tfkl.Dense(hidden_units, activation='', kernel_regularizer=reg)(inputs)
     # Optionally add more layers, dropout, etc. here
 
     outputs = tfkl.Dense(4, activation=None, name="RawParams")(x)
