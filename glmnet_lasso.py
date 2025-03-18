@@ -10,12 +10,13 @@ import numpy as np
 def _soft_threshold(x, lambd):
     return np.sign(x) * np.maximum(np.abs(x) - lambd, 0)
 
-def _enhanced_lasso_path( X, y_, weights, current_beta,lambda_eps, lambda_n, max_iter_cd, tol_cd, p,  f = 2):
+def _enhanced_lasso_path( X, y_, weights, current_beta,lambda_eps, lambda_n, max_iter_cd, tol_cd, p,  f = 1):
     """Advanced coordinate descent with active set and warm starts"""
     n_samples, n_features = X.shape
 
     # Lambda path setup
     lambda_max = np.max(np.abs(X[:, 1:].T @ y_)) / n_samples
+    print(f"Lmabda max : {lambda_max}")
     lambda_path = np.geomspace(lambda_max, lambda_max*lambda_eps, lambda_n)
     
     beta_path = np.zeros((lambda_n, n_features))
@@ -59,7 +60,9 @@ def _enhanced_lasso_path( X, y_, weights, current_beta,lambda_eps, lambda_n, max
             
             #TODO: Early exit if no active features
 
+
             
+
         beta_path[i] = beta.copy()
             
     return beta_path

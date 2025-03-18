@@ -478,7 +478,7 @@ class Gamlss_py:
 
         return dv
 
-    def predict(self, X,, beta_values = True):
+    def predict(self, X, beta_values = True):
         """Predict the distribution parameters given input data.
 
         Args:

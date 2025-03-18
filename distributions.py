@@ -171,8 +171,20 @@ class JSUo:
         """
         z = (y - mu) / sigma
         r = nu + tau * np.arcsinh(z)
-        # Score w.r.t. mu
         return (z / (sigma * (z**2 + 1))) + (r * tau) / (sigma * np.sqrt(z**2 + 1))
+    
+    
+    @staticmethod
+    def _ddmu(y, mu, sigma, nu, tau):
+        """
+        Second derivative of log-likelihood with respect to mu.
+        """
+        z = (y - mu) / sigma
+        r = nu + tau * np.arcsinh(z)
+        t1 = (z**2 - 1) / ((z**2 + 1)**2)
+        t2 = (tau**2) / (z**2 + 1)
+        t3 = (tau * r * z) / ((z**2 + 1)**(3/2))
+        return (t1 - t2 + t3) / (sigma**2)
 
     @staticmethod
     def _dsigma(y, mu, sigma, nu, tau):
@@ -181,8 +193,19 @@ class JSUo:
         """
         z = (y - mu) / sigma
         r = nu + tau * np.arcsinh(z)
-        # Score w.r.t. sigma
         return (-1.0 / (sigma * (z**2 + 1))) + (r * tau * z) / (sigma * np.sqrt(z**2 + 1))
+    
+    @staticmethod
+    def _ddsigma(y, mu, sigma, nu, tau):
+        """
+        Second derivative of log-likelihood with respect to sigma.
+        """
+        z = (y - mu) / sigma
+        r = nu + tau * np.arcsinh(z)
+        t1 = (1 - z**2) / ((z**2 + 1)**2)
+        t2 = (tau**2 * z**2) / (z**2 + 1)
+        t3 = (tau * r * z * (z**2 + 2)) / ((z**2 + 1)**(3/2))
+        return (t1 - t2 - t3) / (sigma**2)
 
     @staticmethod
     def _dnu(y, mu, sigma, nu, tau):
@@ -191,8 +214,14 @@ class JSUo:
         """
         z = (y - mu) / sigma
         r = nu + tau * np.arcsinh(z)
-        # Score w.r.t. nu
         return -r
+    
+    @staticmethod
+    def _ddnu(y, mu, sigma, nu, tau):
+        """
+        d/d(nu) of log-likelihood
+        """
+        return -1
 
     @staticmethod
     def _dtau(y, mu, sigma, nu, tau):
@@ -201,10 +230,20 @@ class JSUo:
         """
         z = (y - mu) / sigma
         r = nu + tau * np.arcsinh(z)
-        # Score w.r.t. tau
-        return (1.0 + r * nu - r * r) / tau
+        return 1.0 / tau - r* np.arcsinh(z)
+    
+    @staticmethod
+    def _ddtau(y, mu, sigma, nu, tau):
+        """
+        d/d(tau) of log-likelihood
+        """
+        z = (y - mu) / sigma
+    
+        return 1.0 / tau**2 - np.arcsinh(z)**2
+    
+    
 
-    def dll(self, y, theta, p=0):
+    def dll(self, y, theta, p):
         """
        first derivative of log-likelihood.
 
@@ -223,7 +262,7 @@ class JSUo:
             raise ValueError("p must be in {0,1,2,3}.")
 
 
-    def _quasi_newton_score(self, y, theta, p=0):
+    def _quasi_newton_score(self, y, theta, p):
         """
         Approximate second derivative as - (first_derivative^2).
         
@@ -231,8 +270,32 @@ class JSUo:
         
         dp = self.dll(y, theta, p=p)
         return -(dp * dp)
+    
+    
+    
+    def _exact_second(self, y, theta, p):
+        """
+        Exact second derivative
+        
+        """
+        
+        mu_, sigma_, nu_, tau_ = self.theta_to_params(theta)
 
-    def ddll(self, y, theta, p=0):
+        if p == 0:
+            return self._ddmu(y, mu_, sigma_, nu_, tau_)
+        elif p == 1:
+            return self._ddsigma(y, mu_, sigma_, nu_, tau_)
+        elif p == 2:
+            return self._ddnu(y, mu_, sigma_, nu_, tau_)
+        elif p == 3:
+            return self._ddtau(y, mu_, sigma_, nu_, tau_)
+        else:
+            raise ValueError("p must be in {0,1,2,3}.")
+        
+
+    
+
+    def ddll(self, y, theta, p):
         """
         Approx. second derivative of log-likelihood wrt one parameter.
 
@@ -240,6 +303,7 @@ class JSUo:
         sc = self._quasi_newton_score(y, theta, p=p)
         
         return np.clip(sc, None, -1e-15)
+
 
 
     def initial_values(self, y, p=0):
@@ -260,7 +324,7 @@ class JSUo:
         """
         if p == 0:
             # Mu initial = average of y
-            return np.full_like(y, np.mean(y))
+            return np.full_like(y, (y+np.mean(y))/2)
         elif p == 1:
             # Sigma initial = stdev of y
             return np.full_like(y, np.std(y))
@@ -268,8 +332,8 @@ class JSUo:
             # Nu initial = 0
             return np.zeros_like(y)
         elif p == 3:
-            # Tau initial = 10 (arbitrary positive guess)
-            return np.full_like(y, 1.0)
+            # Tau initial = 1 (arbitrary positive guess)
+            return np.full_like(y, 5)
 
 
 

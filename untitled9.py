@@ -1,12 +1,18 @@
 # -*- coding: utf-8 -*-
 """
+Created on Mon Mar 17 16:53:58 2025
+
+@author: samue
+"""
+
+# -*- coding: utf-8 -*-
+"""
 Created on Tue Mar 11 09:40:26 2025
 
 @author: samue
 """
 import numpy as np
 from distributions import JSUo
-from sklearn.linear_model import LassoCV
 from sklearn.preprocessing import StandardScaler
 from glmnet_lasso import _enhanced_lasso_path
 from sklearn.datasets import load_diabetes
@@ -15,7 +21,7 @@ class GAMLSS:
     """GAMLSS with active set CD and likelihood-based convergence"""
     
     def __init__(self, distribution= JSUo(), max_iter_outer=30, max_iter_inner=30,
-                 abs_tol=1e-3, rel_tol = 1e-4, lambda_n=100, lambda_eps=1e-4):
+                 abs_tol=1e-4, rel_tol = 1e-5, lambda_n=100, lambda_eps=1e-4):
         self.distribution = distribution
         self.max_iter_outer = max_iter_outer
         self.max_iter_inner = max_iter_inner
@@ -66,30 +72,19 @@ class GAMLSS:
     def fit(self, X, y):
         """Fit model with active set updates and likelihood convergence"""
         self.n_obs = y.shape[0]
-      
         
             
         X_int = np.column_stack([np.ones(X.shape[0]), X])
         X_features = X_int[:, 1:]
         X_features_scaled = self.scaler.fit_transform(X_features)
         X_int[:, 1:] = X_features_scaled
-        n_features = X_int.shape[1]
-
-        
-        # X = self.scaler.fit_transform(X)
-        
        
-        # # Initialize parameters   
-        for p in range(self.distribution.n_of_p):
-            self.betas[p] = np.zeros(n_features)
-
+        # Initialize parameters   
         self.theta = self._make_initial_fitted_values(y)
-        self.ll, self.it_outer = self._outer(X_int, y)
+        self.ll, self.it_outer = self._outer(X, y)
         
         self.fitted = True
-        print("Fit is done")
-        
-        return self
+        return print("Fit is done")
 
     
     
@@ -103,7 +98,7 @@ class GAMLSS:
             for p in range(self.distribution.n_of_p):
                 ll = self._inner(X=X, y=y, p=p)
                 
-            print(f"\t  Improvement outer ll {ll},{ll - ll_prev}")
+            print(f"\t  Improvement outer ll {ll - ll_prev}")
         
             if np.abs(ll_prev - ll) / np.abs(ll_prev) < self.rel_tol:
                 break
@@ -118,78 +113,21 @@ class GAMLSS:
         
         
         for iter_inner in range(1, self.max_iter_inner+1):
-            # Store old values in case we need to revert
-            # old_beta_p = self.betas[p].copy()   # old coefficient vector for parameter p
-            # old_theta_p = self.theta[:, p].copy()   # old theta values for parameter p
-            # old_ll = ll_inner_prev
-            
             print(f"\t \t {p} Inner iteration: {iter_inner}")
-            # eta = self.distribution.link_function(self.theta[:, p], p)
-            # dll = self.distribution.dll(y, self.theta, p)
-            # ddll = self.distribution.ddll(y, self.theta, p)
-            # dth = self.distribution.link_inverse_derivative(eta, p)
+            eta = self.distribution.link_function(self.theta[:, p], p)
+            dll = self.distribution.dll(y, self.theta, p)
+            ddll = self.distribution.ddll(y, self.theta, p)
+            dth = self.distribution.link_inverse_derivative(eta, p)
             
-            # v = dll*dth
-            # w = np.clip(-ddll*dth*dth, 1e-10, 1e10)
+            v = dll*dth
+            w = np.clip(-ddll*dth*dth, 1e-10, 1e10)
             
-            # y_ = eta + v/w
-            
-            
-            eta =  self.distribution.link_function(self.theta[:, p], p)
-            dr = 1 /  self.distribution.link_inverse_derivative(eta, p)
-            dl1dp1 = self.distribution.dll(y, self.theta, p)
-            dl2dp2 = self.distribution.ddll(y, self.theta, p)
-            wt = -(dl2dp2 / (dr * dr))
-            wt = np.clip(wt, 1e-10, 1e10)
-            y_ = eta + dl1dp1 / (dr * wt)
+            y_ = eta + v/w
         
-            # Fit y_ to X with prior weights wt using LASSO with sklearn
-            # lasso_cv = LassoCV(
-            #     fit_intercept=False,  # We already added a column of 1's to X
-            #     cv=10,                 #5-fold CV
-            #     n_alphas=1000,         # or choose your alpha grid/logspace
-            #     random_state=1
-            # )
-            
-            # lasso_cv.fit(X, y_, sample_weight=wt)
-            # self.betas[p] = lasso_cv.coef_.copy()
-            
-            # proposed_beta = lasso_cv.coef_.copy()
-
-            # # Possibly do line search:
-            # alpha = 1.0
-            # for _ in range(10):
-            #     # Proposed partial update
-            #     new_beta_p = old_beta_p + alpha*(proposed_beta - old_beta_p)
-            #     eta_new = X @ new_beta_p
-            #     theta_new = self.distribution.link_inverse(eta_new, p)
-                
-            #     # Temporarily update self.theta
-            #     self.theta[:, p] = theta_new
-            #     ll_inner = self._log_likelihood(y, self.theta)
-                
-            #     if ll_inner < old_ll:
-            #         # This is an improvement in the -2 log-likelihood sense
-            #         # (or log-likelihood got better if you are using the sum(-2 ln(pdf)) as an objective).
-            #         self.betas[p] = new_beta_p
-            #         break
-            #     else:
-            #         # Step-halving: revert back but shrink alpha
-            #         self.theta[:, p] = old_theta_p
-            #         alpha /= 2.0
-            
-            # # after step halving, if no improvement found, revert
-            # if ll_inner >= old_ll:
-            #     # revert to old parameters
-            #     self.betas[p] = old_beta_p
-            #     self.theta[:, p] = old_theta_p
-            #     ll_inner = old_ll
-
-            
             
             # Fit LASSO path with active set updates
             beta_path = _enhanced_lasso_path(
-                X, y_ , wt, 
+                X, y_ , w, 
                 self.betas[p], 
                 self.lambda_eps, self.lambda_n, 
                 self.max_iter_cd, self.tol_cd, 
@@ -199,29 +137,25 @@ class GAMLSS:
             # Select best model using BIC
             bic = self._calculate_bic(y_, X, self.theta, beta_path, p)
             best_idx = np.argmin(bic)
+            betas_old = self.betas[p].copy() if self.betas[p] is not None else None
             self.betas[p] = beta_path[best_idx]
             
             # Update theta and check inner convergence
-            eta_new = X @ self.betas[p]
+            eta_new = np.matmul(X, self.betas[p])
             self.theta[:, p] = self.distribution.link_inverse(eta_new, p)
             ll_inner = self._log_likelihood(y, self.theta)
             
            
-            ll_inner = self._log_likelihood(y, self.theta)
+            
+            if ll_inner > ll_inner_prev:
+                print("\t \t \t Likelihood increased - rejecting step")
+                if betas_old is not None:
+                    self.betas[p] = 0.5 * (self.betas[p] + betas_old)  # Revert halfway
+                    eta_new = np.matmul(X, self.betas[p])
+                    self.theta[:, p] = self.distribution.link_inverse(eta_new, p)
+                    ll_inner = self._log_likelihood(y, self.theta)
             
             print(f"\t \t \t Improvement inner ll {ll_inner}, {ll_inner - ll_inner_prev}")
-        
-            # if ll_inner > ll_inner_prev:
-            #     # The objective (which we want to minimize) got worse.
-            #     # Revert to old values.
-            #     self.betas[p] = old_beta_p
-            #     self.theta[:, p] = old_theta_p
-            #     ll_inner = old_ll
-            #     print("\t     Reverting last update (objective increased).")
-            #     break
-                
-            
-
             if np.abs(ll_inner_prev - ll_inner) / np.abs(ll_inner_prev) < self.rel_tol:
                 break
             if np.abs(ll_inner_prev - ll_inner) < self.abs_tol:
@@ -263,9 +197,6 @@ class GAMLSS:
             for p in range(self.distribution.n_of_p)
         }
 
-
 X, y = load_diabetes(return_X_y=True)
 gamlss = GAMLSS()
 gamlss.fit(X, y)
-print(np.vstack([*gamlss.betas.values()]).T)
-
