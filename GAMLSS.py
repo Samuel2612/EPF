@@ -8,28 +8,29 @@ import numpy as np
 from distributions import JSUo
 from sklearn.linear_model import LassoCV
 from sklearn.preprocessing import StandardScaler
-from glmnet_lasso import _enhanced_lasso_path
-from sklearn.datasets import load_diabetes
+#from glmnet_lasso import _enhanced_lasso_path
+from sklearn.datasets import load_diabetes, fetch_california_housing
 
 class GAMLSS:
     """GAMLSS with active set CD and likelihood-based convergence"""
     
-    def __init__(self, distribution= JSUo(), max_iter_outer=30, max_iter_inner=30,
-                 abs_tol=1e-3, rel_tol = 1e-4, lambda_n=100, lambda_eps=1e-4):
-        self.distribution = distribution
+    def __init__(self, distribution= JSUo(), max_iter_outer=30, max_iter_inner=20):
+        
         self.max_iter_outer = max_iter_outer
         self.max_iter_inner = max_iter_inner
-        self.abs_tol = abs_tol
-        self.rel_tol = rel_tol
+        self.abs_tol = 1e-3
+        self.rel_tol = 1e-4
         self.tol_cd = 1e-6  
         self.max_iter_cd = 1000
-        self.lambda_n = lambda_n
-        self.lambda_eps = lambda_eps
+        self.lambda_n = 100
+        self.lambda_eps = 1e-4
+        
+        self.distribution = distribution
         self.betas = {p: None for p in range(self.distribution.n_of_p)}
         self.scaler = StandardScaler()
         self.fitted = False
 
-    def _make_initial_fitted_values(self, y):
+    def _init_val(self, y):
         out = np.stack(
             [self.distribution.initial_values(y, p=i)
              for i in range(self.distribution.n_of_p)],
@@ -83,7 +84,7 @@ class GAMLSS:
         for p in range(self.distribution.n_of_p):
             self.betas[p] = np.zeros(n_features)
 
-        self.theta = self._make_initial_fitted_values(y)
+        self.theta = self._init_val(y)
         self.ll, self.it_outer = self._outer(X_int, y)
         
         self.fitted = True
@@ -105,10 +106,8 @@ class GAMLSS:
                 
             print(f"\t  Improvement outer ll {ll},{ll - ll_prev}")
         
-            if np.abs(ll_prev - ll) / np.abs(ll_prev) < self.rel_tol:
-                break
-            if np.abs(ll_prev - ll) < self.abs_tol:
-                break   
+            if np.abs(ll_prev - ll) / np.abs(ll_prev) < self.rel_tol or np.abs(ll_prev - ll) < self.abs_tol:
+                break  
             
             ll_prev = ll
         return ll, iter_outer
@@ -144,15 +143,15 @@ class GAMLSS:
             y_ = eta + dl1dp1 / (dr * wt)
         
             # Fit y_ to X with prior weights wt using LASSO with sklearn
-            # lasso_cv = LassoCV(
-            #     fit_intercept=False,  # We already added a column of 1's to X
-            #     cv=10,                 #5-fold CV
-            #     n_alphas=1000,         # or choose your alpha grid/logspace
-            #     random_state=1
-            # )
+            lasso_cv = LassoCV(
+                fit_intercept=False,  # We already added a column of 1's to X
+                cv=10,                 #5-fold CV
+                n_alphas=1000,         # or choose your alpha grid/logspace
+                random_state=1
+            )
             
-            # lasso_cv.fit(X, y_, sample_weight=wt)
-            # self.betas[p] = lasso_cv.coef_.copy()
+            lasso_cv.fit(X, y_, sample_weight=wt)
+            self.betas[p] = lasso_cv.coef_.copy()
             
             # proposed_beta = lasso_cv.coef_.copy()
 
@@ -187,19 +186,19 @@ class GAMLSS:
 
             
             
-            # Fit LASSO path with active set updates
-            beta_path = _enhanced_lasso_path(
-                X, y_ , wt, 
-                self.betas[p], 
-                self.lambda_eps, self.lambda_n, 
-                self.max_iter_cd, self.tol_cd, 
-                p=p
-            )
+            # # Fit LASSO path with active set updates
+            # beta_path = _enhanced_lasso_path(
+            #     X, y_ , wt, 
+            #     self.betas[p], 
+            #     self.lambda_eps, self.lambda_n, 
+            #     self.max_iter_cd, self.tol_cd, 
+            #     p=p
+            # )
             
-            # Select best model using BIC
-            bic = self._calculate_bic(y_, X, self.theta, beta_path, p)
-            best_idx = np.argmin(bic)
-            self.betas[p] = beta_path[best_idx]
+            # # Select best model using BIC
+            # bic = self._calculate_bic(y_, X, self.theta, beta_path, p)
+            # best_idx = np.argmin(bic)
+            # self.betas[p] = beta_path[best_idx]
             
             # Update theta and check inner convergence
             eta_new = X @ self.betas[p]
@@ -207,7 +206,7 @@ class GAMLSS:
             ll_inner = self._log_likelihood(y, self.theta)
             
            
-            ll_inner = self._log_likelihood(y, self.theta)
+        
             
             print(f"\t \t \t Improvement inner ll {ll_inner}, {ll_inner - ll_inner_prev}")
         
@@ -222,15 +221,13 @@ class GAMLSS:
                 
             
 
-            if np.abs(ll_inner_prev - ll_inner) / np.abs(ll_inner_prev) < self.rel_tol:
+            if np.abs(ll_inner_prev - ll_inner) / np.abs(ll_inner_prev) < self.rel_tol or np.abs(ll_inner_prev - ll_inner) < self.abs_tol:
                 break
-            if np.abs(ll_inner_prev - ll_inner) < self.abs_tol:
-                break
+            
             ll_inner_prev = ll_inner
            
         return ll_inner
-    
-    
+       
     def predict(self, X):
         """
         Predict distribution parameters for new data
@@ -249,8 +246,7 @@ class GAMLSS:
             ps[:, p] = self.distribution.link_inverse(eta, p)
         
         #TODO: Add option to return objective value/ error
-        return ps
-    
+        return ps   
 
     @property
     def beta(self):
@@ -265,6 +261,7 @@ class GAMLSS:
 
 
 X, y = load_diabetes(return_X_y=True)
+# X, y = fetch_california_housing(return_X_y=True)
 gamlss = GAMLSS()
 gamlss.fit(X, y)
 print(np.vstack([*gamlss.betas.values()]).T)

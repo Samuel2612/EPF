@@ -8,9 +8,6 @@ Created on Thu Feb 13 11:56:33 2025
 import numpy as np
 import scipy.stats as st
 
-LOG_LOWER_BOUND = 1e-25
-EXP_UPPER_BOUND = 25
-SMALL_NUMBER = 1e-10
 
 class link_log:
     """
@@ -37,8 +34,6 @@ class link_log:
     def link_derivative(self, x: np.ndarray) -> np.ndarray:
         return 1 / x
 
-    def link_second_derivative(self, x: np.ndarray) -> np.ndarray:
-        return -1 / x**2
 
 
 class link_id:
@@ -63,8 +58,6 @@ class link_id:
     def link_derivative(self, x: np.ndarray) -> np.ndarray:
         return np.ones_like(x)
 
-    def link_second_derivative(self, x: np.ndarray) -> np.ndarray:
-        return np.zeros_like(x)
 
 
 
@@ -76,7 +69,7 @@ class JSUo:
     
     This implementation:
       - Defines score (first derivative) for each parameter
-      - Defines approximate second derivatives as -(score^2)
+      - Defines exact second derivatives
       - Uses scipy.stats.johnsonsu for PDF and CDF
       - Allows link functions for each parameter
       - Provides initial values for iterative fitting
@@ -333,7 +326,7 @@ class JSUo:
             return np.zeros_like(y)
         elif p == 3:
             # Tau initial = 1 (arbitrary positive guess)
-            return np.full_like(y, 5)
+            return np.full_like(y, 2)
 
 
 
