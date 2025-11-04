@@ -10,7 +10,7 @@ import numpy as np
 def _soft_threshold(x, lambd):
     return np.sign(x) * np.maximum(np.abs(x) - lambd, 0)
 
-
+ 
 def _enhanced_lasso_path( X, y_, weights, current_beta,lambda_eps, lambda_n, max_iter_cd, tol_cd, p,  f = 1):
     """Advanced coordinate descent with active set and warm starts"""
     n_samples, n_features = X.shape

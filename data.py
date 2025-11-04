@@ -305,4 +305,4 @@ class SupplyDemandAnalysis:
 
         return elasticity
 
-
+w = SupplyDemandAnalysis(r"C:\Users\samue\Documents\GitHub\EPF\auction_aggregated_curves_netherlands_2021\auction_aggregated_curves_netherlands_20210102.csv").plot_transformed_curve(15)
